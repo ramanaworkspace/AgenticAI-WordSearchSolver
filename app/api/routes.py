@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from fastapi.concurrency import run_in_threadpool
 from PIL import Image, UnidentifiedImageError
 from PIL.Image import DecompressionBombError, DecompressionBombWarning
+from pydantic import WithJsonSchema
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.core.config import Settings, get_settings
 from app.schemas.puzzle import (
@@ -145,20 +147,44 @@ async def _read_and_validate_image(
     "/api/v1/solve/image",
     response_model=ImageSolveResponse,
     tags=["puzzles"],
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "encoding": {"words": {"contentType": "application/json"}},
+                },
+            },
+        },
+    },
 )
 async def solve_image(
     image: Annotated[UploadFile, File(description="Puzzle image file.")],
     words: Annotated[
-        str,
+        str | UploadFile,
+        WithJsonSchema({"type": "string"}),
         Form(description='JSON array of target words, for example ["BEAR", "FROG"].'),
     ],
     settings: Annotated[Settings, Depends(get_image_settings)],
     extractor: Annotated[GridExtractor | None, Depends(get_grid_extractor)],
 ) -> ImageSolveResponse:
     """Extract a grid from an image, then solve it using the deterministic solver."""
+    raw_words: str | bytes
+    if isinstance(words, StarletteUploadFile):
+        if words.content_type != "application/json":
+            raise HTTPException(status_code=415, detail="The words part must use application/json.")
+        raw_words = await words.read(65537)
+        if len(raw_words) > 65536:
+            raise HTTPException(status_code=413, detail="The words part exceeds 64 KiB.")
+    else:
+        raw_words = words
     try:
-        target_words = normalize_words(json.loads(words))
-    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        target_words = normalize_words(json.loads(raw_words))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail='words must be a JSON array of strings, for example ["BEAR", "FROG"].',
+        ) from exc
+    except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),

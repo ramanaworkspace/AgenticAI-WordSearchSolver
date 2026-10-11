@@ -28,6 +28,38 @@ Open `http://127.0.0.1:8000/docs` for the generated API documentation.
 See [API-Test-Use-Cases.md](./API-Test-Use-Cases.md) for Swagger/Postman
 instructions, ready-to-use payloads, expected results, and negative tests.
 
+## Run with Docker Compose
+
+Docker Compose builds the API image with Tesseract and English language data,
+starts the service on port `8765`, and checks readiness through `GET /health`:
+
+```powershell
+docker compose up --build -d
+Invoke-RestMethod http://127.0.0.1:8765/health
+docker compose down
+```
+
+The health endpoint returns `{"status":"ok"}` after the API is accepting
+requests. The image bundles the local OCR engine, so image solving works with
+the default `IMAGE_EXTRACTION_PROVIDER=local` setting. To use a different
+host-side port, set `HOST_PORT` before starting Compose. Optional image and
+Route-LLM settings can also be supplied through environment variables; keep
+API keys out of source control and provide them only in the runtime environment.
+
+For submission, place the project contents under exactly one top-level folder
+in the ZIP and keep `docker-compose.yml` directly inside that folder. Do not
+include `.git`, `.venv`, `.env`, or cache directories. Keep the archive below
+the applicable contest size limit. The repository's `GET /health`,
+`POST /api/v1/solve`, and `POST /api/v1/solve/image` endpoints are documented
+in this README and in `API-Test-Use-Cases.md`; use the problem-provided Karate
+`.feature` file as the final contract when one is available.
+
+Karate contract features derived from the checked-in use cases are in
+[`tests/karate`](./tests/karate). Run them with the evaluator's Karate runner
+after starting the API, add `tests/karate` to the Karate classpath so its
+configuration and worksheet fixture are available, and set the `baseUrl`
+system property if the API is not at `http://127.0.0.1:8765`.
+
 ## Solve from a grid
 
 ```http
@@ -94,6 +126,16 @@ Recognition time grows with the number of cells.
 
 The image endpoint accepts a multipart image and `words` as a JSON-array form
 field:
+
+Swagger's **Try it out** also supports this format. The API declares the
+`words` part as `application/json` so Swagger preserves the brackets and
+quotes instead of sending comma-separated text. Both ordinary JSON-array
+text fields and JSON multipart file parts are accepted; comma-separated
+words are not valid input.
+
+The Compose service limits Tesseract to one OpenMP thread per invocation.
+This avoids thread oversubscription during the many small cell-recognition
+calls in Docker Desktop.
 
 ```python
 import httpx

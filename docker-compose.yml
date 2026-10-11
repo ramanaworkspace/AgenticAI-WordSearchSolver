@@ -1,0 +1,29 @@
+services:
+  word-search-api:
+    build:
+      context: .
+    ports:
+      - "${HOST_PORT:-8765}:8000"
+    environment:
+      IMAGE_EXTRACTION_PROVIDER: "${IMAGE_EXTRACTION_PROVIDER:-local}"
+      TESSERACT_CMD: /usr/bin/tesseract
+      OMP_THREAD_LIMIT: "1"
+      LOCAL_OCR_TIMEOUT_SECONDS: "${LOCAL_OCR_TIMEOUT_SECONDS:-60}"
+      ROUTE_LLM_BASE_URL: "${ROUTE_LLM_BASE_URL:-}"
+      ROUTE_LLM_API_KEY: "${ROUTE_LLM_API_KEY:-}"
+      ROUTE_LLM_MODEL: "${ROUTE_LLM_MODEL:-}"
+      ROUTE_LLM_TIMEOUT_SECONDS: "${ROUTE_LLM_TIMEOUT_SECONDS:-30}"
+      IMAGE_MAX_BYTES: "${IMAGE_MAX_BYTES:-5242880}"
+      IMAGE_MAX_WIDTH: "${IMAGE_MAX_WIDTH:-4096}"
+      IMAGE_MAX_HEIGHT: "${IMAGE_MAX_HEIGHT:-4096}"
+      EXTRACTION_CONFIDENCE_THRESHOLD: "${EXTRACTION_CONFIDENCE_THRESHOLD:-0.7}"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s

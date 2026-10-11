@@ -57,6 +57,62 @@ def test_openapi_documents_zero_based_coordinates() -> None:
     assert "Zero-based column index." in coordinate["properties"]["column"]["description"]
 
 
+def test_image_words_openapi_encoding_preserves_json_text() -> None:
+    schema = client.get("/openapi.json").json()
+    multipart = schema["paths"]["/api/v1/solve/image"]["post"]["requestBody"]["content"][
+        "multipart/form-data"
+    ]
+    assert multipart["encoding"]["words"] == {"contentType": "application/json"}
+    body = schema["components"]["schemas"]["Body_solve_image_api_v1_solve_image_post"]
+    assert body["properties"]["words"]["type"] == "string"
+    assert "anyOf" not in body["properties"]["words"]
+
+
+def test_image_words_accepts_swagger_json_part() -> None:
+    response = client.post(
+        "/api/v1/solve/image",
+        files={
+            "image": ("puzzle.txt", b"not an image", "text/plain"),
+            "words": ("blob", b'["BEAR","FROG","GOAT"]', "application/json"),
+        },
+    )
+    assert response.status_code == 415
+    assert response.json() == {"detail": "Upload a JPEG, PNG, WebP, or GIF image."}
+
+
+def test_image_words_reports_invalid_json_clearly() -> None:
+    response = client.post(
+        "/api/v1/solve/image",
+        files={"image": ("puzzle.txt", b"not an image", "text/plain")},
+        data={"words": "BEAR,FROG,GOAT"},
+    )
+    assert response.status_code == 422
+    assert "JSON array" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("content", "media_type", "expected_status"),
+    [
+        (b'["BEAR"]', "text/plain", 415),
+        (b" " * 65537, "application/json", 413),
+        (b"\xff", "application/json", 422),
+        (b"BEAR", "application/json", 422),
+    ],
+    ids=["wrong-media-type", "oversized", "invalid-utf8", "invalid-json"],
+)
+def test_image_words_json_part_validation(
+    content: bytes, media_type: str, expected_status: int
+) -> None:
+    response = client.post(
+        "/api/v1/solve/image",
+        files={
+            "image": ("puzzle.txt", b"not an image", "text/plain"),
+            "words": ("blob", content, media_type),
+        },
+    )
+    assert response.status_code == expected_status
+
+
 def test_image_endpoint_rejects_unsupported_media_type() -> None:
     response = client.post(
         "/api/v1/solve/image",
